@@ -2,3 +2,11 @@ sniffer
 *.o
 .vscode/
 *.deb
+build/
+build-*/
+.qtcreator/
+*.user
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
