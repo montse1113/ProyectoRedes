@@ -25,3 +25,9 @@ captura_basica
 captura_parce
 mio
 >>>>>>> e83b783d7ccb2757dd6864402016071e18127acf
+
+# Qt Creator / CMake
+build/
+build-*/
+*.user
+*.user.*
