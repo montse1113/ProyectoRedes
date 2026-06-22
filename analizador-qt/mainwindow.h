@@ -40,6 +40,7 @@ private:
     bool paqueteCumpleFiltro(const PaqueteInfo &info) const;
     QString formatearHexDump(const QByteArray &datos) const;
     QString escaparCSV(const QString &campo) const;
+    QColor colorPorProtocolo(const QString &proto);
 
     // Worker corriendo en su propio hilo
     QThread    *m_hiloCaptura = nullptr;

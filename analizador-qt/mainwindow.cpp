@@ -88,6 +88,48 @@ void MainWindow::configurarUI()
 
     // Estado inicial de botones
     ui->btnDetener->setEnabled(false);
+
+    // ----- se reacomodan las areas: tabla arriba, detalles, hex abajo -----
+    ui->splitter->insertWidget(0, ui->tabla);     // la tabla pasa al tope
+    ui->splitter->insertWidget(1, ui->detalles);  // detalles al medio
+    // hexView queda solo al final
+    ui->splitter->setStretchFactor(0, 5);  // la tabla se lleva la mayor parte
+    ui->splitter->setStretchFactor(1, 3);  // detalles
+    ui->splitter->setStretchFactor(2, 2);  // hex
+
+    // se da mas aire a las filas
+    ui->tabla->verticalHeader()->setDefaultSectionSize(26);
+
+    // ----- lavado de cara general -----
+    this->setStyleSheet(R"(
+        QPushButton {
+            padding: 6px 14px;
+            border: 1px solid #bdbdbd;
+            border-radius: 6px;
+            background: #f5f5f5;
+        }
+        QPushButton:hover { background: #e9e9e9; }
+        QPushButton:disabled { color: #9e9e9e; background: #fafafa; }
+        QLineEdit, QComboBox {
+            padding: 4px 6px;
+            border: 1px solid #cfcfcf;
+            border-radius: 6px;
+            background: white;
+        }
+        QHeaderView::section {
+            background: #455a64;
+            color: white;
+            padding: 6px;
+            border: none;
+            font-weight: bold;
+        }
+        QTableWidget {
+            gridline-color: #e0e0e0;
+            selection-background-color: #90caf9;
+            selection-color: black;
+        }
+        QTextEdit { border: 1px solid #cfcfcf; border-radius: 6px; }
+    )");
 }
 
 // ============================================================
@@ -205,6 +247,11 @@ void MainWindow::onPaqueteCapturado(PaqueteInfo info)
                                                          : info.ipDestino));
     ui->tabla->setItem(fila, 4, new QTableWidgetItem(info.protocolo));
     ui->tabla->setItem(fila, 5, new QTableWidgetItem(info.resumenInfo));
+
+    QColor color = colorPorProtocolo(info.protocolo);
+    for (int c = 0; c < ui->tabla->columnCount(); ++c) {
+        ui->tabla->item(fila, c)->setBackground(color);
+    }
 
     if (!paqueteCumpleFiltro(info)) {
         ui->tabla->setRowHidden(fila, true);
@@ -426,4 +473,26 @@ QString MainWindow::escaparCSV(const QString &campo) const
         return "\"" + copia + "\"";
     }
     return campo;
+}
+
+// ============================================================
+// se devuelve un color de fondo suave segun el protocolo
+// del paquete, al estilo de wireshark
+// ============================================================
+QColor MainWindow::colorPorProtocolo(const QString &proto)
+{
+    // se normaliza a mayusculas para comparar sin importar el caso
+    const QString p = proto.toUpper();
+
+    if (p.contains("ARP"))                      return QColor(0xFA, 0xF0, 0xD7); // amarillo suave
+    if (p.contains("ICMP"))                     return QColor(0xFD, 0xD8, 0xD8); // rojo/rosa suave
+    if (p.contains("IGMP"))                     return QColor(0xFF, 0xE8, 0xCC); // naranja suave
+    if (p.contains("DNS"))                      return QColor(0xCF, 0xE8, 0xD4); // verde-azulado
+    if (p.contains("HTTP"))                     return QColor(0xC8, 0xF7, 0xC8); // verde claro
+    if (p.contains("TLS") || p.contains("SSL")) return QColor(0xD7, 0xF0, 0xE0); // verde menta
+    if (p.contains("QUIC"))                     return QColor(0xE0, 0xD8, 0xF7); // lila
+    if (p.contains("UDP"))                      return QColor(0xDA, 0xEE, 0xFF); // azul claro
+    if (p.contains("TCP"))                      return QColor(0xE7, 0xE6, 0xFF); // lavanda suave
+
+    return QColor(Qt::white); // blanco por defecto para lo desconocido
 }
