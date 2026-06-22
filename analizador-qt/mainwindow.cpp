@@ -1,20 +1,13 @@
-
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-#include <QComboBox>
-#include <QPushButton>
-#include <QTableWidget>
 #include <QTableWidgetItem>
-#include <QTextEdit>
-#include <QLabel>
-#include <QHBoxLayout>
-#include <QVBoxLayout>
-#include <QSplitter>
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QFont>
-#include <QLineEdit>
+#include <QFileDialog>
+#include <QTextStream>
+#include <QFile>
 
 #include <pcap/pcap.h>
 
@@ -23,16 +16,37 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    setWindowTitle("Analizador de paquetes biker");
+    setWindowTitle("Sniffer - Redes I");
     resize(1100, 700);
 
-    construirUI();
+    configurarUI();
     llenarComboInterfaces();
+
+    // ----- Conexiones de botones y tabla -----
+    connect(ui->btnIniciar, &QPushButton::clicked,
+            this, &MainWindow::onIniciarClicked);
+    connect(ui->btnDetener, &QPushButton::clicked,
+            this, &MainWindow::onDetenerClicked);
+    connect(ui->tabla, &QTableWidget::itemSelectionChanged,
+            this, &MainWindow::onFilaSeleccionada);
+
+    // ----- Conexiones de filtros -----
+    connect(ui->comboProtocolo, &QComboBox::currentTextChanged,
+            this, &MainWindow::onFiltroChanged);
+    connect(ui->filtroIp, &QLineEdit::textChanged,
+            this, &MainWindow::onFiltroChanged);
+    connect(ui->filtroIpDst, &QLineEdit::textChanged,
+            this, &MainWindow::onFiltroChanged);
+    connect(ui->filtroPuerto, &QLineEdit::textChanged,
+            this, &MainWindow::onFiltroChanged);
+    connect(ui->btnLimpiar, &QPushButton::clicked,
+            this, &MainWindow::onLimpiarFiltro);
+    connect(ui->btnExportar, &QPushButton::clicked,
+            this, &MainWindow::onExportarClicked);
 }
 
 MainWindow::~MainWindow()
 {
-    // Si la captura sigue corriendo, paramos limpiamente
     if (m_hiloCaptura && m_hiloCaptura->isRunning()) {
         if (m_worker) m_worker->detener();
         m_hiloCaptura->quit();
@@ -42,113 +56,42 @@ MainWindow::~MainWindow()
 }
 
 // ============================================================
-// Construcción de la interfaz por código
+// Ajustes de la UI que no se pueden hacer (o no hiciste) en el .ui
 // ============================================================
-void MainWindow::construirUI()
+void MainWindow::configurarUI()
 {
-    // ----- Barra superior: combo + botones -----
-    m_comboInterfaces = new QComboBox(this);
-    m_comboInterfaces->setMinimumWidth(220);
-
-    m_btnIniciar = new QPushButton("    Iniciar", this);
-    m_btnDetener = new QPushButton("Detener", this);
-    m_btnDetener->setEnabled(false);
-
-    m_lblEstado = new QLabel("Listo", this);
-
-    QHBoxLayout *barra = new QHBoxLayout();
-    barra->addWidget(new QLabel("Interfaz:", this));
-    barra->addWidget(m_comboInterfaces);
-    barra->addWidget(m_btnIniciar);
-    barra->addWidget(m_btnDetener);
-    barra->addStretch();
-    barra->addWidget(m_lblEstado);
-
-    // ----- Fila de filtros -----
-    m_comboProtocolo = new QComboBox(this);
-    m_comboProtocolo->addItems({"TODOS", "TCP", "UDP", "ICMP", "ICMPv6",
-                                "IGMP", "ARP"});
-
-    m_filtroIp = new QLineEdit(this);
-    m_filtroIp->setPlaceholderText("ej: 192.168.1");
-    m_filtroIp->setMaximumWidth(200);
-
-    m_filtroPuerto = new QLineEdit(this);
-    m_filtroPuerto->setPlaceholderText("ej: 443");
-    m_filtroPuerto->setMaximumWidth(100);
-
-    m_btnLimpiar = new QPushButton("Limpiar", this);
-
-    QHBoxLayout *filtros = new QHBoxLayout();
-    filtros->addWidget(new QLabel("Protocolo:", this));
-    filtros->addWidget(m_comboProtocolo);
-    filtros->addWidget(new QLabel("IP:", this));
-    filtros->addWidget(m_filtroIp);
-    filtros->addWidget(new QLabel("Puerto:", this));
-    filtros->addWidget(m_filtroPuerto);
-    filtros->addWidget(m_btnLimpiar);
-    filtros->addStretch();
-
-    // ----- Tabla de paquetes -----
-    m_tabla = new QTableWidget(this);
-    m_tabla->setColumnCount(6);
-    m_tabla->setHorizontalHeaderLabels(
+    // Configuración de la tabla
+    ui->tabla->setColumnCount(6);
+    ui->tabla->setHorizontalHeaderLabels(
         {"#", "Tiempo", "Origen", "Destino", "Protocolo", "Info"});
-    m_tabla->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_tabla->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_tabla->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_tabla->verticalHeader()->setVisible(false);
-    m_tabla->horizontalHeader()->setStretchLastSection(true);
-    m_tabla->setColumnWidth(0, 50);
-    m_tabla->setColumnWidth(1, 110);
-    m_tabla->setColumnWidth(2, 160);
-    m_tabla->setColumnWidth(3, 160);
-    m_tabla->setColumnWidth(4, 100);
+    ui->tabla->horizontalHeader()->setVisible(true);
+    ui->tabla->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->tabla->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->tabla->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    ui->tabla->verticalHeader()->setVisible(false);
+    ui->tabla->horizontalHeader()->setStretchLastSection(true);
+    ui->tabla->setColumnWidth(0, 50);
+    ui->tabla->setColumnWidth(1, 110);
+    ui->tabla->setColumnWidth(2, 160);
+    ui->tabla->setColumnWidth(3, 160);
+    ui->tabla->setColumnWidth(4, 100);
 
-    // ----- Panel de detalles -----
-    m_detalles = new QTextEdit(this);
-    m_detalles->setReadOnly(true);
+    // Panel de detalles con fuente monoespaciada
+    ui->detalles->setReadOnly(true);
     QFont monoFont("Monospace");
     monoFont.setStyleHint(QFont::TypeWriter);
-    m_detalles->setFont(monoFont);
-    m_detalles->setPlaceholderText("Haz click en un paquete para ver sus detalles");
+    ui->detalles->setFont(monoFont);
 
-    // ----- Splitter vertical: tabla arriba, detalles abajo -----
-    QSplitter *splitter = new QSplitter(Qt::Vertical, this);
-    splitter->addWidget(m_tabla);
-    splitter->addWidget(m_detalles);
-    splitter->setStretchFactor(0, 3);
-    splitter->setStretchFactor(1, 2);
+    //panel hex tambien con fuente mono
+    ui->hexView->setReadOnly(true);
+    ui->hexView->setFont(monoFont);
 
-    // ----- Layout principal -----
-    QWidget *central = new QWidget(this);
-    QVBoxLayout *layoutPrincipal = new QVBoxLayout(central);
-    layoutPrincipal->addLayout(barra);
-    layoutPrincipal->addLayout(filtros);
-    layoutPrincipal->addWidget(splitter);
-    setCentralWidget(central);
-
-    // ----- Conexiones de botones y tabla -----
-    connect(m_btnIniciar, &QPushButton::clicked,
-            this, &MainWindow::onIniciarClicked);
-    connect(m_btnDetener, &QPushButton::clicked,
-            this, &MainWindow::onDetenerClicked);
-    connect(m_tabla, &QTableWidget::itemSelectionChanged,
-            this, &MainWindow::onFilaSeleccionada);
-    // Conexiones de filtros
-    connect(m_comboProtocolo, &QComboBox::currentTextChanged,
-            this, &MainWindow::onFiltroChanged);
-    connect(m_filtroIp, &QLineEdit::textChanged,
-            this, &MainWindow::onFiltroChanged);
-    connect(m_filtroPuerto, &QLineEdit::textChanged,
-            this, &MainWindow::onFiltroChanged);
-    connect(m_btnLimpiar, &QPushButton::clicked,
-            this, &MainWindow::onLimpiarFiltro);
+    // Estado inicial de botones
+    ui->btnDetener->setEnabled(false);
 }
 
 // ============================================================
 // Llenar el combo con las interfaces de red disponibles
-// (lo mismo que hacías en tu main.c original)
 // ============================================================
 void MainWindow::llenarComboInterfaces()
 {
@@ -167,41 +110,46 @@ void MainWindow::llenarComboInterfaces()
         QString textoCombo = descripcion.isEmpty()
                                  ? nombre
                                  : QString("%1 (%2)").arg(nombre, descripcion);
-        // Guardamos el nombre real como dato del item
-        m_comboInterfaces->addItem(textoCombo, nombre);
+        ui->comboInterfaces->addItem(textoCombo, nombre);
     }
 
     pcap_freealldevs(alldevs);
 }
 
 // ============================================================
-// Botón Iniciar
+// Boton Iniciar
+//  Corre en el hilo principal su trabajo es montar el hilo captura y dejar unir las señales
+// para que todo se comunique solo. no captura nada por si mismo solo prepara y arranca al worker
 // ============================================================
 void MainWindow::onIniciarClicked()
 {
-    if (m_comboInterfaces->count() == 0) {
+    if (ui->comboInterfaces->count() == 0) {
         QMessageBox::warning(this, "Aviso", "No hay interfaces disponibles");
         return;
     }
-
-    QString nombreInterfaz = m_comboInterfaces->currentData().toString();
-
-    // Limpiamos resultados previos
-    m_tabla->setRowCount(0);
-    m_detalles->clear();
+    //se saca el nombre real de la interfaz
+    QString nombreInterfaz = ui->comboInterfaces->currentData().toString();
+    //se limpia los resultados de la captura anterior
+    ui->tabla->setRowCount(0);
+    ui->detalles->clear();
+    ui->hexView->clear();
     m_paquetes.clear();
-
-    // Creamos el worker y su hilo
-    m_hiloCaptura = new QThread(this);
-    m_worker = new PcapWorker();           // sin parent: lo manejamos manual
+    //aqui nace el segundo hilo
+    m_hiloCaptura = new QThread(this); //el hilo (vacio aun)
+    m_worker = new PcapWorker();
     m_worker->setInterfaz(nombreInterfaz);
-    m_worker->moveToThread(m_hiloCaptura); // el worker vivirá en ese hilo
+    //aqui se le dice a Qt "este worker le pertenece al hilo de captura"
+    //sin esto se congelaria
+    m_worker->moveToThread(m_hiloCaptura);
 
-    // Cuando el hilo arranque, llama a iniciar() del worker
+
+    //cuando el hilo arranque, llama a iniciar() del worker
     connect(m_hiloCaptura, &QThread::started,
             m_worker, &PcapWorker::iniciar);
 
-    // Señales del worker -> slots de la UI
+
+    //señales del worker (emitidas en el hilo en captura
+    //ui ejecutados en el hilo principal, Qt hace el cruce solo
     connect(m_worker, &PcapWorker::paqueteCapturado,
             this, &MainWindow::onPaqueteCapturado);
     connect(m_worker, &PcapWorker::errorCaptura,
@@ -209,20 +157,22 @@ void MainWindow::onIniciarClicked()
     connect(m_worker, &PcapWorker::capturaTerminada,
             this, &MainWindow::onCapturaTerminada);
 
-    // Limpieza cuando termina
+    //la cadena de auto-destruccion
+    //cuando la captura termina, el hilo se detiene, cuando el hilo termina
+    //se borran solos el worker y el hilo, deleteLater espera a que sea seguro borrar
     connect(m_worker, &PcapWorker::capturaTerminada,
             m_hiloCaptura, &QThread::quit);
     connect(m_hiloCaptura, &QThread::finished,
             m_worker, &QObject::deleteLater);
     connect(m_hiloCaptura, &QThread::finished,
             m_hiloCaptura, &QObject::deleteLater);
-
+    //arranca el hilo esto dispara la señal started-> iniciar()
     m_hiloCaptura->start();
-
-    m_btnIniciar->setEnabled(false);
-    m_btnDetener->setEnabled(true);
-    m_comboInterfaces->setEnabled(false);
-    m_lblEstado->setText("Capturando...");
+    //se ajusta la interfaz al estado capturando...
+    ui->btnIniciar->setEnabled(false);
+    ui->btnDetener->setEnabled(true);
+    ui->comboInterfaces->setEnabled(false);
+    ui->lblEstado->setText("Capturando...");
 }
 
 // ============================================================
@@ -231,8 +181,8 @@ void MainWindow::onIniciarClicked()
 void MainWindow::onDetenerClicked()
 {
     if (m_worker) m_worker->detener();
-    m_lblEstado->setText("Deteniendo...");
-    m_btnDetener->setEnabled(false);
+    ui->lblEstado->setText("Deteniendo...");
+    ui->btnDetener->setEnabled(false);
 }
 
 // ============================================================
@@ -240,30 +190,27 @@ void MainWindow::onDetenerClicked()
 // ============================================================
 void MainWindow::onPaqueteCapturado(PaqueteInfo info)
 {
-    // Guardamos el paquete completo
     m_paquetes.append(info);
 
-    // Agregamos una fila a la tabla
-    int fila = m_tabla->rowCount();
-    m_tabla->insertRow(fila);
+    int fila = ui->tabla->rowCount();
+    ui->tabla->insertRow(fila);
 
-    m_tabla->setItem(fila, 0, new QTableWidgetItem(QString::number(info.numero)));
-    m_tabla->setItem(fila, 1, new QTableWidgetItem(info.tiempo));
-    m_tabla->setItem(fila, 2, new QTableWidgetItem(info.ipOrigen.isEmpty()
-                                                       ? info.macOrigen
-                                                       : info.ipOrigen));
-    m_tabla->setItem(fila, 3, new QTableWidgetItem(info.ipDestino.isEmpty()
-                                                       ? info.macDestino
-                                                       : info.ipDestino));
-    m_tabla->setItem(fila, 4, new QTableWidgetItem(info.protocolo));
-    m_tabla->setItem(fila, 5, new QTableWidgetItem(info.resumenInfo));
+    ui->tabla->setItem(fila, 0, new QTableWidgetItem(QString::number(info.numero)));
+    ui->tabla->setItem(fila, 1, new QTableWidgetItem(info.tiempo));
+    ui->tabla->setItem(fila, 2, new QTableWidgetItem(info.ipOrigen.isEmpty()
+                                                         ? info.macOrigen
+                                                         : info.ipOrigen));
+    ui->tabla->setItem(fila, 3, new QTableWidgetItem(info.ipDestino.isEmpty()
+                                                         ? info.macDestino
+                                                         : info.ipDestino));
+    ui->tabla->setItem(fila, 4, new QTableWidgetItem(info.protocolo));
+    ui->tabla->setItem(fila, 5, new QTableWidgetItem(info.resumenInfo));
 
     if (!paqueteCumpleFiltro(info)) {
-        m_tabla->setRowHidden(fila, true);
+        ui->tabla->setRowHidden(fila, true);
     }
 
-    // Auto-scroll a la última fila
-    m_tabla->scrollToBottom();
+    ui->tabla->scrollToBottom();
 }
 
 // ============================================================
@@ -272,34 +219,38 @@ void MainWindow::onPaqueteCapturado(PaqueteInfo info)
 void MainWindow::onErrorCaptura(QString mensaje)
 {
     QMessageBox::critical(this, "Error de captura", mensaje);
-    m_lblEstado->setText("Error");
+    ui->lblEstado->setText("Error");
 }
 
 // ============================================================
-// Captura terminó (el hilo va a morir)
+// Captura terminó
 // ============================================================
 void MainWindow::onCapturaTerminada()
 {
-    m_btnIniciar->setEnabled(true);
-    m_btnDetener->setEnabled(false);
-    m_comboInterfaces->setEnabled(true);
-    m_lblEstado->setText(QString("Listo (%1 paquetes)").arg(m_paquetes.size()));
+    ui->btnIniciar->setEnabled(true);
+    ui->btnDetener->setEnabled(false);
+    ui->comboInterfaces->setEnabled(true);
+    ui->lblEstado->setText(QString("Listo (%1 paquetes)").arg(m_paquetes.size()));
 
-    // El worker y el hilo se autodestruyen por los connects con deleteLater
     m_worker = nullptr;
     m_hiloCaptura = nullptr;
 }
 
 // ============================================================
 // Click en una fila de la tabla
+// se dispara cuando el usuario hace clic en una fila de la tabla
+// rellena el panel de detalles y el panel hex con la info del paquete eligido
 // ============================================================
 void MainWindow::onFilaSeleccionada()
 {
-    int fila = m_tabla->currentRow();
+    int fila = ui->tabla->currentRow();
+    //guarda de seguridad si no hay fila valida, salimos. evita leer
+    // fuera dle rango de m_paquetes
     if (fila < 0 || fila >= m_paquetes.size()) return;
-
+    // el numero de fila coincida con el indice en m_pquetes
     const PaqueteInfo &info = m_paquetes[fila];
-
+    //area de detalles estructurados
+    //se pega el arbol de capas que se construyo durante el analisis (info.detallesCompletos)
     QString texto;
     texto += QString("Paquete #%1\n").arg(info.numero);
     texto += QString("Tiempo: %1\n").arg(info.tiempo);
@@ -307,64 +258,172 @@ void MainWindow::onFilaSeleccionada()
     texto += "─────────────────────────────────────\n";
     texto += info.detallesCompletos;
 
-    m_detalles->setPlainText(texto);
+    ui->detalles->setPlainText(texto);
+    //info.rawBytes guarda los paquetes tal cual llegaron y formatearHexDump los convierte a texto legible
+
+    ui->hexView->setPlainText(formatearHexDump(info.rawBytes));
 }
 
 // ============================================================
-// Decide si un paquete cumple con los filtros actuales
+// Filtros
+// decide si un paquete debe verse con los filtros actuales. devuelkve true (mostrar) false (ocultar)
 // ============================================================
 bool MainWindow::paqueteCumpleFiltro(const PaqueteInfo &info) const
 {
-    // Filtro de protocolo
-    QString protoFiltro = m_comboProtocolo->currentText();
-    if (protoFiltro != "TODOS" && info.protocolo != protoFiltro) {
+    //filtro protocolo
+    QString protoFiltro = ui->comboProtocolo->currentText().trimmed();
+    //trimmed() quita espacios sobrantes , caseInsensative ignora mayusculas
+    if (protoFiltro != "TODOS" && info.protocolo.compare(protoFiltro, Qt::CaseInsensitive) != 0) {
         return false;
     }
-
-    // Filtro de IP (busca subcadena en origen o destino, case-insensitive)
-    QString ipFiltro = m_filtroIp->text().trimmed();
-    if (!ipFiltro.isEmpty()) {
-        bool coincide =
-            info.ipOrigen.contains(ipFiltro, Qt::CaseInsensitive) ||
-            info.ipDestino.contains(ipFiltro, Qt::CaseInsensitive);
-        if (!coincide) return false;
+    //filtro ip origen
+    QString ipOrigenFiltro = ui->filtroIp->text().trimmed();
+    if (!ipOrigenFiltro.isEmpty()) {
+        if (!info.ipOrigen.contains(ipOrigenFiltro, Qt::CaseInsensitive))
+            return false;
     }
-
-    // Filtro de puerto (busca el número en el resumenInfo,
-    // que tiene formato tipo "443 → 51234 [ACK]")
-    QString puertoFiltro = m_filtroPuerto->text().trimmed();
+    //filtro ip DESTINO
+    QString ipDestinoFiltro = ui->filtroIpDst->text().trimmed();
+    if (!ipDestinoFiltro.isEmpty()) {
+        if (!info.ipDestino.contains(ipDestinoFiltro, Qt::CaseInsensitive))
+            return false;
+    }
+    //filtro PUERTO
+    QString puertoFiltro = ui->filtroPuerto->text().trimmed();
     if (!puertoFiltro.isEmpty()) {
         if (!info.resumenInfo.contains(puertoFiltro)) {
             return false;
         }
     }
-
+    //si paso todos los filtro activos se muestra
     return true;
 }
 
 // ============================================================
-// Reaplica el filtro: oculta/muestra filas según el criterio actual
-// ============================================================
+    // Genera un hex dump estilo Wireshark/hexdump:
+    //   offset    bytes en hexadecimal              ASCII
+    // ============================================================
+QString MainWindow::formatearHexDump(const QByteArray &datos) const
+{
+    QString resultado;
+    const int bytesPorLinea = 16;//16 bytes por renglon
+    //se avanza de 16 en 16 bytes. cada linea es una linea del dump.
+    for (int i = 0; i < datos.size(); i += bytesPorLinea) {
+        // 1) Offset (posición) en hex, 4 dígitos
+        resultado += QString("%1   ").arg(i, 4, 16, QChar('0'));
+
+        // 2) Los bytes en hexadecimal
+        QString ascii;
+        for (int j = 0; j < bytesPorLinea; ++j) {
+            if (i + j < datos.size()) {
+                unsigned char byte = static_cast<unsigned char>(datos[i + j]);
+                resultado += QString("%1 ").arg(byte, 2, 16, QChar('0'));
+
+                // Construimos el ASCII: imprimible o un punto
+                if (byte >= 32 && byte < 127)
+                    ascii += QChar(byte);
+                else
+                    ascii += '.';
+            } else {
+                // Relleno para alinear cuando la última línea es incompleta
+                resultado += "   ";
+            }
+
+            // Espacio extra a la mitad (separador visual de 8 bytes)
+            if (j == 7) resultado += " ";
+        }
+
+        // 3) La columna ASCII al final
+        resultado += "  " + ascii + "\n";
+    }
+
+    return resultado;
+}
+
 void MainWindow::onFiltroChanged()
 {
     int visibles = 0;
-    for (int fila = 0; fila < m_tabla->rowCount(); ++fila) {
-        // m_paquetes[fila] tiene el PaqueteInfo correspondiente a esa fila
+    for (int fila = 0; fila < ui->tabla->rowCount(); ++fila) {
         bool mostrar = paqueteCumpleFiltro(m_paquetes[fila]);
-        m_tabla->setRowHidden(fila, !mostrar);
+        ui->tabla->setRowHidden(fila, !mostrar);
         if (mostrar) ++visibles;
     }
-    m_lblEstado->setText(QString("Mostrando %1 / %2 paquetes")
-                             .arg(visibles).arg(m_paquetes.size()));
+    ui->lblEstado->setText(QString("Mostrando %1 / %2 paquetes")
+                               .arg(visibles).arg(m_paquetes.size()));
 }
 
-// ============================================================
-// Limpiar todos los filtros
-// ============================================================
 void MainWindow::onLimpiarFiltro()
 {
-    m_comboProtocolo->setCurrentIndex(0);  // "TODOS"
-    m_filtroIp->clear();
-    m_filtroPuerto->clear();
-    // onFiltroChanged se va a disparar solo por los cambios anteriores
+    ui->comboProtocolo->setCurrentIndex(0);
+    ui->filtroIp->clear();
+    ui->filtroIpDst->clear();
+    ui->filtroPuerto->clear();
+}
+
+void MainWindow::onExportarClicked()
+{
+    // Si no hay nada que exportar, avisamos
+    if (m_paquetes.isEmpty()) {
+        QMessageBox::information(this, "Exportar",
+                                 "No hay paquetes capturados para exportar.");
+        return;
+    }
+
+    // Dialogo para elegir dónde guardar
+    QString rutaArchivo = QFileDialog::getSaveFileName(
+        this,
+        "Guardar captura como CSV",
+        "captura.csv",
+        "Archivos CSV (*.csv)");
+
+    // Si el usuario cancelo, rutaArchivo queda vacío
+    if (rutaArchivo.isEmpty()) return;
+
+    // Si no escribió la extension, se la agregamos
+    if (!rutaArchivo.endsWith(".csv", Qt::CaseInsensitive))
+        rutaArchivo += ".csv";
+
+    // Abrir el archivo para escritura
+    QFile archivo(rutaArchivo);
+    if (!archivo.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Error",
+                              QString("No se pudo crear el archivo:\n%1").arg(rutaArchivo));
+        return;
+    }
+
+    QTextStream out(&archivo);
+
+    // Encabezados (primera fila del CSV)
+    out << "No,Tiempo,Origen,Destino,Protocolo,Aplicacion,Longitud,Info\n";
+
+    // Una fila por cada paquete
+    for (const PaqueteInfo &info : m_paquetes) {
+        QString origen  = info.ipOrigen.isEmpty()  ? info.macOrigen  : info.ipOrigen;
+        QString destino = info.ipDestino.isEmpty() ? info.macDestino : info.ipDestino;
+
+        out << info.numero << ","
+            << escaparCSV(info.tiempo) << ","
+            << escaparCSV(origen) << ","
+            << escaparCSV(destino) << ","
+            << escaparCSV(info.protocolo) << ","
+            << escaparCSV(info.aplicacion) << ","
+            << info.longitud << ","
+            << escaparCSV(info.resumenInfo) << "\n";
+    }
+
+    archivo.close();
+
+    QMessageBox::information(this, "Exportar",
+                             QString("Se exportaron %1 paquetes a:\n%2")
+                                 .arg(m_paquetes.size()).arg(rutaArchivo));
+}
+
+QString MainWindow::escaparCSV(const QString &campo) const
+{
+    if (campo.contains(',') || campo.contains('"') || campo.contains('\n')) {
+        QString copia = campo;
+        copia.replace("\"", "\"\"");   // las comillas internas se duplican
+        return "\"" + copia + "\"";
+    }
+    return campo;
 }

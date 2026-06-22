@@ -17,7 +17,7 @@
 
 // ============================================================
 // HELPER: identificar protocolo de aplicación por puerto
-// (idéntico al tuyo, no toca PaqueteInfo)
+//
 // ============================================================
 inline const char* identificar_app(uint16_t puerto_src, uint16_t puerto_dst, int es_tcp) {
     uint16_t pp[2] = {puerto_src, puerto_dst};
@@ -61,14 +61,16 @@ inline const char* identificar_app(uint16_t puerto_src, uint16_t puerto_dst, int
 
 // ============================================================
 // CAPA 4: TCP
+//  'offset' al entrar apunta justo al inicio de la cabecera TCP
 // ============================================================
 inline void analizar_tcp(const u_char *paquete, int offset, PaqueteInfo &info) {
+    //se para en el offset acumulado (ethernet+ip)
     struct tcphdr *tcp = (struct tcphdr *)(paquete + offset);
     uint16_t src = ntohs(tcp->source);
     uint16_t dst = ntohs(tcp->dest);
 
     info.protocolo = "TCP";
-
+    //aqui se termina la cascada para un paquete TCP: 'info' ya esta completo
     // Construir cadena de flags
     QString flags;
     if (tcp->th_flags & TH_SYN)  flags += "SYN ";
@@ -81,11 +83,11 @@ inline void analizar_tcp(const u_char *paquete, int offset, PaqueteInfo &info) {
     const char *app = identificar_app(src, dst, 1);
     if (app) info.aplicacion = app;
 
-    // Resumen tipo Wireshark para la columna "Info"
+    //Resumen para la columna "Info"
     info.resumenInfo = QString("%1 → %2 [%3]")
                            .arg(src).arg(dst).arg(flags.trimmed());
 
-    // Detalles completos (lo que antes imprimías)
+    // Detalles completos
     info.detallesCompletos += "   |- Protocolo:      TCP\n";
     info.detallesCompletos += QString("   |- Puerto Origen:  %1\n").arg(src);
     info.detallesCompletos += QString("   |- Puerto Destino: %1\n").arg(dst);
@@ -203,8 +205,9 @@ inline void analizar_ipv6(const u_char *paquete, int offset, PaqueteInfo &info) 
 // CAPA 3: IPv4
 // ============================================================
 inline void analizar_ipv4(const u_char *paquete, int offset, PaqueteInfo &info) {
+    //se para en el byte 14 y se lee desde ahi como cabecera IP
     struct ip *iph = (struct ip *)(paquete + offset);
-
+    //se ectrae ip origen/destino
     info.ipOrigen  = inet_ntoa(iph->ip_src);
     info.ipDestino = inet_ntoa(iph->ip_dst);
 
@@ -212,8 +215,10 @@ inline void analizar_ipv4(const u_char *paquete, int offset, PaqueteInfo &info) 
     info.detallesCompletos += QString("   |- IP Fuente:   %1\n").arg(info.ipOrigen);
     info.detallesCompletos += QString("   |- IP Destino:  %1\n").arg(info.ipDestino);
     info.detallesCompletos += QString("   |- TTL:         %1\n").arg(iph->ip_ttl);
-
-    int nuevo_offset = offset + (iph->ip_hl * 4);
+    //la cabecera ip no siempre mide lo mismo: ip_hl da su longitud en "palabras" de 32 bits, asi que x4 da los bytes
+    //se suma eso al offstet para saber donde empieza la capa 4
+    int nuevo_offset = offset + (iph->ip_hl * 4);//ej. 14+20=34
+    //el campo ip_p dice que portocolo de transporte viene. se pása el rellevo von el nuevo offset
     switch (iph->ip_p) {
     case IPPROTO_TCP:  analizar_tcp(paquete, nuevo_offset, info);  break;
     case IPPROTO_UDP:  analizar_udp(paquete, nuevo_offset, info);  break;
@@ -259,11 +264,14 @@ inline void analizar_arp(const u_char *paquete, int offset, PaqueteInfo &info) {
 }
 
 // ============================================================
-// CAPA 2: Ethernet (punto de entrada)
+// CAPA 2: Ethernet (punto de entrada al analisis). Recibe el paquete crudo y un
+// paquete vacio por preferencia (&info). Cada capa ira rellenando a ese mismo 'info'
+// queda completo con datos de todas las capas que se atravesaron
 // ============================================================
 inline void analizar_ethernet(const u_char *paquete, PaqueteInfo &info) {
+    //se trata los primeros 14 bytes como una cabecera ethernet
     struct ether_header *eth = (struct ether_header *)paquete;
-
+    //se extrae mac origen/destino
     info.macDestino = QString("%1:%2:%3:%4:%5:%6")
                           .arg(eth->ether_dhost[0],2,16,QChar('0')).arg(eth->ether_dhost[1],2,16,QChar('0'))
                           .arg(eth->ether_dhost[2],2,16,QChar('0')).arg(eth->ether_dhost[3],2,16,QChar('0'))
@@ -276,10 +284,15 @@ inline void analizar_ethernet(const u_char *paquete, PaqueteInfo &info) {
 
     info.detallesCompletos += QString("   |- MAC Destino: %1\n").arg(info.macDestino);
     info.detallesCompletos += QString("   |- MAC Fuente:  %1\n").arg(info.macOrigen);
-
+    //la cabecera ethernet mide 14 bytes. Se guarda ese tanaño como 'offset'
+    //le dice a la siguiente capa donde empiezan sus datos
     int offset = sizeof(struct ether_header);
+    //el campo ether_thype dice que viene despues (IPv4, IPv6, ARP)
+    //ntohs voltea los bytes (la red usa orden distinto al del cpu)
     uint16_t tipo_ethernet = ntohs(eth->ether_type);
 
+    //segun el tipo, se le pasa el relevo a al capa 3 correspondiente
+    //siempre arrastrando la misma 'info' y el offset acumulado
     if (tipo_ethernet == ETHERTYPE_IP) {
         analizar_ipv4(paquete, offset, info);
     } else if (tipo_ethernet == ETHERTYPE_IPV6) {

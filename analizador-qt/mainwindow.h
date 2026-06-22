@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QThread>
+#include <QList>
 
 #include "paquete_info.h"
 #include "pcapworker.h"
@@ -10,14 +11,6 @@
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
-
-// Adelanto de clases para no incluir headers pesados aquí
-class QComboBox;
-class QPushButton;
-class QTableWidget;
-class QTextEdit;
-class QLabel;
-class QLineEdit;
 
 class MainWindow : public QMainWindow
 {
@@ -28,48 +21,33 @@ public:
     ~MainWindow();
 
 private slots:
-    // Botones
     void onIniciarClicked();
     void onDetenerClicked();
 
-    // Eventos del worker (llegan por señal desde el otro hilo)
     void onPaqueteCapturado(PaqueteInfo info);
     void onErrorCaptura(QString mensaje);
     void onCapturaTerminada();
 
-    // Click en una fila de la tabla
     void onFilaSeleccionada();
 
     void onFiltroChanged();
     void onLimpiarFiltro();
+    void onExportarClicked();
 
 private:
-    // Métodos privados
-    void construirUI();
+    void configurarUI();          // ajustes que el .ui no cubre
     void llenarComboInterfaces();
-
     bool paqueteCumpleFiltro(const PaqueteInfo &info) const;
-
-    // Widgets que construimos por código
-    QComboBox    *m_comboInterfaces = nullptr;
-    QPushButton  *m_btnIniciar      = nullptr;
-    QPushButton  *m_btnDetener      = nullptr;
-    QTableWidget *m_tabla           = nullptr;
-    QTextEdit    *m_detalles        = nullptr;
-    QLabel       *m_lblEstado       = nullptr;
-
-    QComboBox    *m_comboProtocolo  = nullptr;
-    QLineEdit    *m_filtroIp        = nullptr;
-    QLineEdit    *m_filtroPuerto    = nullptr;
-    QPushButton  *m_btnLimpiar      = nullptr;
+    QString formatearHexDump(const QByteArray &datos) const;
+    QString escaparCSV(const QString &campo) const;
 
     // Worker corriendo en su propio hilo
-    QThread      *m_hiloCaptura     = nullptr;
-    PcapWorker   *m_worker          = nullptr;
+    QThread    *m_hiloCaptura = nullptr;
+    PcapWorker *m_worker      = nullptr;
 
     // Guardamos cada PaqueteInfo recibido para mostrarlo al hacer click
     QList<PaqueteInfo> m_paquetes;
 
-    Ui::MainWindow *ui = nullptr;  // se mantiene aunque no lo usemos
+    Ui::MainWindow *ui = nullptr;
 };
 #endif // MAINWINDOW_H
