@@ -2,3 +2,32 @@ sniffer
 *.o
 .vscode/
 *.deb
+<<<<<<< HEAD
+build/
+build-*/
+.qtcreator/
+*.user
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+=======
+
+# Generados al compilar / ejecutar
+*.o
+*.out
+a.out
+core
+
+# Binarios sin extension (mismo nombre que el .cpp)
+lista_interfaces
+captura_basica
+captura_parce
+mio
+>>>>>>> e83b783d7ccb2757dd6864402016071e18127acf
+
+# Qt Creator / CMake
+build/
+build-*/
+*.user
+*.user.*
