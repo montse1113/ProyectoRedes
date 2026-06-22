@@ -60,6 +60,37 @@ Además de lo anterior, se necesita Qt 6 y CMake:
 
 ## Compilación y ejecución
 
+### Versión gráfica — AppImage (sin compilar)
+
+La forma más rápida de probar la versión gráfica. No requiere instalar Qt,
+libpcap ni compilar nada: todo viene empaquetado dentro del AppImage. Funciona
+en cualquier Linux x86_64 moderno.
+
+1. Descargar la última versión desde la página de Releases:
+   https://github.com/montse1113/ProyectoRedes/releases/latest
+
+   O directo por terminal:
+
+       wget https://github.com/montse1113/ProyectoRedes/releases/latest/download/Analizador_de_Paquetes-x86_64.AppImage
+
+2. Dar permisos de ejecución:
+
+       chmod +x Analizador_de_Paquetes-x86_64.AppImage
+
+3. Ejecutar con sudo (la captura de paquetes en modo crudo requiere
+   privilegios de root):
+
+       export APPIMAGE_EXTRACT_AND_RUN=1
+       sudo -E ./Analizador_de_Paquetes-x86_64.AppImage
+
+> Notas:
+> - `APPIMAGE_EXTRACT_AND_RUN=1` evita la dependencia de FUSE, que no todos
+>   los sistemas traen instalado.
+> - Si la ventana no aparece al usar sudo, ejecutar una sola vez
+>   `xhost +SI:localuser:root` y volver a intentarlo.
+> - El AppImage debe correr con sudo; el truco de `setcap` solo aplica a la
+>   versión compilada localmente (ver más abajo).
+
 ### Versión de terminal (C)
 
 Desde la raíz del proyecto:
@@ -72,7 +103,7 @@ Flujo de uso: se elige la interfaz, se captura todo el tráfico, y al
 presionar Ctrl+C aparece un menú para configurar filtros, mostrar los
 paquetes que cumplen y exportarlos a CSV.
 
-### Versión gráfica (Qt)
+### Versión gráfica (Qt) — compilar desde el código
 
 Desde la carpeta de la versión gráfica:
 
